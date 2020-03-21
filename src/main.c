@@ -4,9 +4,13 @@
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
+#include <limits.h>
 
 pid_t child_pid;
 int stat_loc;
+
+int read_line(char *line, size_t size);
+int parse_line(char *input, char **output, const int n);
 
 int main(){
     char to_read[MAX_INPUT];
@@ -15,13 +19,14 @@ int main(){
     while(1){
         printf("simpleshell>");
         if (read_line(to_read, MAX_INPUT) == -1) return -2;
-        if (parse_line(parsed,to_read) == -1) return -3;
+        if (parse_line(parsed,to_read, 50) == -1) return -3;
 
         child_pid = fork();
         if (child_pid == 0) {
             /* Never returns if the call is successful */
-            execvp(command[0], command);
-            printf("This won't be printed if execvp is successul\n");
+            printf("%s %s", to_read,  parsed[0]);
+            int r = execvp(parsed[0], parsed);
+            printf("This won't be printed if execvp is successul %d\n", r);
         } else {
             waitpid(child_pid, &stat_loc, WUNTRACED);
         }
@@ -53,7 +58,7 @@ int read_line(char *line, size_t size){
     return -2;
 }
 
-int get_input(char *input, char **output, const int n) {
+int parse_line(char *input, char **output, const int n) {
     char *separator = " ";
     char *parsed;
     int index = 0;
