@@ -1,5 +1,10 @@
 # Prerequisites
 *.d
+*.config
+*.creator
+*.creator.user
+*.files
+*.includes
 
 # Object files
 *.o
