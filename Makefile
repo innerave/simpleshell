@@ -5,10 +5,19 @@ POSTFLAGS = -fsanitize=address
 EXECUTABLE = terminal
 SOURCES = main.c
 
-.PHONY: clean $(EXECUTABLE)
+.PHONY: clean $(EXECUTABLE) build
 
 $(EXECUTABLE): 
-	$(CC) -g -o $(BIN)/$(EXECUTABLE) $(SRC)/$(SOURCES) $(POSTFLAGS)
+	if [ ! -d $(BIN) ] then
+	mkdir $(BIN)
+	fi
+	$(CC) -o $(BIN)/$(EXECUTABLE) $(SRC)/$(SOURCES) $(POSTFLAGS)
+
+build:
+	if [ ! -d $(BIN) ] then
+	mkdir $(BIN)
+	fi
+    $(CC) -g -o $(BIN)/$(EXECUTABLE) $(SRC)/$(SOURCES) $(POSTFLAGS)
 
 clean:
 	rm -rf $(BIN)/$(EXECUTABLE)
