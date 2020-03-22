@@ -8,7 +8,8 @@
 #include <signal.h>
 #include <linux/limits.h>
 #include <errno.h>
-
+#include <sys/resource.h>
+#include <sys/wait.h>
 pid_t child_pid;
 int stat_loc;
 int background_work = 0;
@@ -16,18 +17,42 @@ int change_directory = 0;
 
 int parse_line(char*, char**, const int);
 int read_line(char*, size_t);
+void termination_handler (int signum);
+void termination_handler_child (int signum);
+void child_handler(int signum);
 
 int main()
 {
     char to_read[MAX_INPUT];
     char* parsed[50];
     char cwd[PATH_MAX];
+    struct sigaction new_action, old_action, def_action;
+    signal(SIGCHLD, child_handler);
+   /* Set up the structure to specify the new action.
+    * This is really horribly ugly...
+    */
+    new_action.sa_handler = termination_handler;
+    sigemptyset (&new_action.sa_mask);
+    new_action.sa_flags = 0;
+
+    def_action.sa_handler = termination_handler_child;
+    sigemptyset (&def_action.sa_mask);
+    def_action.sa_flags = 0;
+
+    sigaction (SIGINT, NULL, &old_action);
+    if (old_action.sa_handler != SIG_IGN)
+    {
+        if(sigaction (SIGINT, &new_action, NULL) == -1)
+        {
+            perror(NULL);
+        }
+    }
 
     while(1)
     {
         getcwd(cwd, PATH_MAX);
         printf("[%s] simpleshell: $ ", cwd);
-        signal(SIGINT, SIG_IGN);
+
         if (read_line(to_read, MAX_INPUT) == -1) return -2;
         if (parse_line(to_read, parsed, 50) == -1) return -3;
         if (parsed[0] == NULL)
@@ -47,9 +72,14 @@ int main()
             if (child_pid == 0)
             {
                 /* Never returns if the call is successful */
-                signal(SIGINT, SIG_DFL);
-                execvp(parsed[0], parsed);
-                printf("Something went wrong\n");
+                sigaction (SIGINT, NULL, &old_action);
+                if (old_action.sa_handler != SIG_IGN)
+                    sigaction (SIGINT, &def_action, NULL);
+
+                if (execvp(parsed[0], parsed) == -1)
+                {
+                    exit(errno);
+                }
             }
             else
             {              
@@ -77,11 +107,6 @@ int read_line(char *line, size_t size)
     while (1)
     {
         c = getchar();
-        if (c == VINTR)
-        {
-            printf("\n");
-            return 0;
-        }
         if (c == EOF || c == '\n')
         {
             line[pos] = '\0';
@@ -142,4 +167,23 @@ int parse_line(char* input, char** output, const int n)
         output[index] = NULL;
     }
     return 0;
+}
+
+void termination_handler(int signum)
+{
+    printf("\n");
+}
+
+void termination_handler_child (int signum)
+{
+    exit(EXIT_SUCCESS);
+}
+
+void child_handler(int signum)
+{
+    pid_t pid;
+    int status;
+
+    /* EEEEXTEERMINAAATE! */
+    while((pid = waitpid(-1, &status, WNOHANG)) > 0);
 }
