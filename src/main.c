@@ -10,42 +10,54 @@
 
 pid_t child_pid;
 int stat_loc;
+char* pwd;
+int background_work = 0;
+int change_directory = 0;
 
 int parse_line(char*, char**, const int);
 int read_line(char*, size_t);
-int background_work = 0;
 
 int main()
 {
     char to_read[MAX_INPUT];
     char* parsed[50];
-
     while(1)
     {
-        printf("simpleshell > ");
+        pwd = getenv("PWD");
+        printf("[%s] simpleshell: > ", pwd);
         if (read_line(to_read, MAX_INPUT) == -1) return -2;
         if (parse_line(to_read, parsed, 50) == -1) return -3;
-        child_pid = fork();
-        if (child_pid == 0)
+        if (change_directory == 1)
         {
-            /* Never returns if the call is successful */
-            execvp(parsed[0], parsed);
-            printf("Something went wrong\n");
+            chdir(parsed[1]);
+        }
+        else if (parsed[0][0] == '$')
+        {
+            printf("%s", getenv(parsed));
         }
         else
         {
-            signal(SIGINT, SIG_IGN);
-            if (background_work == 1)
+            child_pid = fork();
+            if (child_pid == 0)
             {
-                waitpid(child_pid, &stat_loc, WNOHANG);
-                printf("Child PID: %d\n", child_pid);
+                /* Never returns if the call is successful */
+                execvp(parsed[0], parsed);
+                printf("Something went wrong\n");
             }
             else
             {
-                waitpid(child_pid, &stat_loc, WUNTRACED);
+                signal(SIGINT, SIG_IGN);
+                if (background_work == 1)
+                {
+                    waitpid(child_pid, &stat_loc, WNOHANG);
+                    printf("Child PID: %d\n", child_pid);
+                }
+                else
+                {
+                    waitpid(child_pid, &stat_loc, WUNTRACED);
+                }
             }
         }
-
     }
     /* Т.к. не может выйти из цикла */
     return -1;
@@ -83,10 +95,15 @@ int parse_line(char* input, char** output, const int n)
     char* separator = " ";
     char* parsed;
     int index = 0;
+    change_directory = 0;
 
     parsed = strtok(input, separator);
     while (parsed != NULL)
     {
+        if (strcmp(parsed, "cd") == 0)
+        {
+            change_directory = 1;
+        }
         output[index] = parsed;
         index++;
         if (index > n)

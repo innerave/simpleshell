@@ -5,6 +5,8 @@
 *.creator.user
 *.files
 *.includes
+*.cflags
+*.cxxflags
 
 # Object files
 *.o
