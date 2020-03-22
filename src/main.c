@@ -4,13 +4,12 @@
 #include <string.h>
 #include <termios.h>
 #include <unistd.h>
-#include <limits.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <linux/limits.h>
 
 pid_t child_pid;
 int stat_loc;
-char* pwd;
 int background_work = 0;
 int change_directory = 0;
 
@@ -21,19 +20,22 @@ int main()
 {
     char to_read[MAX_INPUT];
     char* parsed[50];
+    char cwd[PATH_MAX];
+
     while(1)
     {
-        pwd = getenv("PWD");
-        printf("[%s] simpleshell: > ", pwd);
+        getcwd(cwd, PATH_MAX);
+        printf("[%s] simpleshell: $ ", cwd);
+        signal(SIGINT, SIG_IGN);
         if (read_line(to_read, MAX_INPUT) == -1) return -2;
         if (parse_line(to_read, parsed, 50) == -1) return -3;
+        if (parsed[0] == NULL)
+        {
+            continue;
+        }
         if (change_directory == 1)
         {
             chdir(parsed[1]);
-        }
-        else if (parsed[0][0] == '$')
-        {
-            printf("%s", getenv(parsed));
         }
         else
         {
@@ -41,12 +43,12 @@ int main()
             if (child_pid == 0)
             {
                 /* Never returns if the call is successful */
+                signal(SIGINT, SIG_DFL);
                 execvp(parsed[0], parsed);
                 printf("Something went wrong\n");
             }
             else
-            {
-                signal(SIGINT, SIG_IGN);
+            {              
                 if (background_work == 1)
                 {
                     waitpid(child_pid, &stat_loc, WNOHANG);
@@ -71,6 +73,11 @@ int read_line(char *line, size_t size)
     while (1)
     {
         c = getchar();
+        if (c == VINTR)
+        {
+            printf("\n");
+            return 0;
+        }
         if (c == EOF || c == '\n')
         {
             line[pos] = '\0';
@@ -98,6 +105,12 @@ int parse_line(char* input, char** output, const int n)
     change_directory = 0;
 
     parsed = strtok(input, separator);
+
+    if (parsed == NULL)
+    {
+        return 0;
+    }
+
     while (parsed != NULL)
     {
         if (strcmp(parsed, "cd") == 0)
