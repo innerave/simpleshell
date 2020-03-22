@@ -7,6 +7,7 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <linux/limits.h>
+#include <errno.h>
 
 pid_t child_pid;
 int stat_loc;
@@ -35,7 +36,10 @@ int main()
         }
         if (change_directory == 1)
         {
-            chdir(parsed[1]);
+            if (chdir(parsed[1]) == -1)
+            {
+                perror("Change directory");
+            }
         }
         else
         {
