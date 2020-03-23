@@ -41,14 +41,13 @@ void wait_for_process(process*);
 
 int main()
 {
-    init_shell();
-
     char to_read[MAX_INPUT];
     char cwd[PATH_MAX];
-	char* parsed[50];
+    char* parsed[50];
 
     while(1)
     {
+        init_shell();
         getcwd(cwd, PATH_MAX);
         printf("[%s] simpleshell: $ ", cwd);
 
@@ -69,22 +68,19 @@ int main()
 
         pid_t pid = fork();
 
-        if (pid == 0)
-        
-			child_p->argv = parsed;
+        if (pid == 0) {
+            child_p.argv = parsed;
             launch_process(&child_p, shell_pgid, foreground);
-        }
-        else
-        {
-            if (shell_is_interactive)
-            {
+          }
+        else {
+            if (shell_is_interactive) {
                 child_p.pid = pid;
                 setpgid(pid, shell_pgid);
-            }
-        }
+              }
+          }
 
         if (!shell_is_interactive)
-            // wait_for_job (j);  ПОКА ХЗ
+             wait_for_process(&child_p);  //ПОКА ХЗ
         else if (foreground)
             put_shell_in_foreground(shell_pgid, 0);
         else
@@ -206,10 +202,11 @@ int launch_process (process *p, pid_t pgid, int foreground)
     if (pgid == 0) pgid = pid;
     setpgid(pid, pgid);
     if (foreground) tcsetpgrp(shell_terminal, pgid);
-
+    if (foreground) {
+        signal(SIGINT, SIG_DFL);
+        signal(SIGQUIT, SIG_DFL);
+      }
     /* Set the handling for job control signals back to the default.  */
-    signal(SIGINT, SIG_DFL);
-    signal(SIGQUIT, SIG_DFL);
     signal(SIGTSTP, SIG_DFL);
     signal(SIGTTIN, SIG_DFL);
     signal(SIGTTOU, SIG_DFL);
@@ -240,7 +237,7 @@ void put_shell_in_foreground(pid_t shell, const int cont)
 
 void put_shell_in_background(pid_t shell, const int cont)
 {
-    //typically do nothing
+//    kill(-shell_pgid, SIGTTIN);
 }
 
 void wait_for_process(process* p)
@@ -248,5 +245,5 @@ void wait_for_process(process* p)
     int status;
     pid_t pid;
 
-    pid = wait(p->pid, &status, WUNTRACED); //may be do wait while (!job_is_stopped)
+    pid = waitpid(p->pid, &status, WUNTRACED); //may be do wait while (!job_is_stopped)
 }
