@@ -9,44 +9,42 @@
 #include <linux/limits.h>
 #include <errno.h>
 #include <sys/resource.h>
-#include <sys/wait.h>
-pid_t child_pid;
+
+typedef struct process
+{
+  char **argv;                /* for exec */
+  pid_t pid;                  /* process ID */
+  char completed;             /* true if process has completed */
+  char stopped;               /* true if process has stopped */
+  int status;                 /* reported status value */
+} process;
+
+struct process child_p;
 int stat_loc;
-int background_work = 0;
-int change_directory = 0;
+int foreground;
+int change_directory = 0; //rework!!!
+
+pid_t shell_pgid;
+struct termios shell_tmodes;
+int shell_terminal;
+int shell_is_interactive;
 
 int parse_line(char*, char**, const int);
 int read_line(char*, size_t);
-void termination_handler (int signum);
-void termination_handler_child (int signum);
-void child_handler(int signum);
+
+int init_shell(void);
+int launch_process(process*, pid_t, int);
+int do_process_notification(int);
+void put_shell_in_background(pid_t, const int);
+void put_shell_in_foreground(pid_t, const int);
+void wait_for_process(process*);
 
 int main()
 {
+    init_shell();
+
     char to_read[MAX_INPUT];
-    char* parsed[50];
     char cwd[PATH_MAX];
-    struct sigaction new_action, old_action, def_action;
-    signal(SIGCHLD, child_handler);
-   /* Set up the structure to specify the new action.
-    * This is really horribly ugly...
-    */
-    new_action.sa_handler = termination_handler;
-    sigemptyset (&new_action.sa_mask);
-    new_action.sa_flags = 0;
-
-    def_action.sa_handler = termination_handler_child;
-    sigemptyset (&def_action.sa_mask);
-    def_action.sa_flags = 0;
-
-    sigaction (SIGINT, NULL, &old_action);
-    if (old_action.sa_handler != SIG_IGN)
-    {
-        if(sigaction (SIGINT, &new_action, NULL) == -1)
-        {
-            perror(NULL);
-        }
-    }
 
     while(1)
     {
@@ -54,46 +52,42 @@ int main()
         printf("[%s] simpleshell: $ ", cwd);
 
         if (read_line(to_read, MAX_INPUT) == -1) return -2;
-        if (parse_line(to_read, parsed, 50) == -1) return -3;
+        if (parse_line(to_read, child_p->argv) == -1) return -3;
         if (parsed[0] == NULL)
         {
             continue;
         }
-        if (change_directory == 1)
+        if (change_directory == 1) //REWORKKK!!!
         {
             if (chdir(parsed[1]) == -1)
             {
                 perror("Change directory");
             }
+            continue;
+        }
+
+        pid_t pid = fork();
+
+        if (pid == 0)
+        {
+            launch_process(&child_p, shell_pgid, foreground);
         }
         else
         {
-            child_pid = fork();
-            if (child_pid == 0)
+            if (shell_is_interactive)
             {
-                /* Never returns if the call is successful */
-                sigaction (SIGINT, NULL, &old_action);
-                if (old_action.sa_handler != SIG_IGN)
-                    sigaction (SIGINT, &def_action, NULL);
-
-                if (execvp(parsed[0], parsed) == -1)
-                {
-                    exit(errno);
-                }
-            }
-            else
-            {              
-                if (background_work == 1)
-                {
-                    waitpid(child_pid, &stat_loc, WNOHANG);
-                    printf("Child PID: %d\n", child_pid);
-                }
-                else
-                {
-                    waitpid(child_pid, &stat_loc, WUNTRACED);
-                }
+                child_p.pid = pid;
+                setpgid(pid, shell_pgid);
             }
         }
+
+        if (!shell_is_interactive)
+            // wait_for_job (j);  ПОКА ХЗ
+        else if (foreground)
+            put_shell_in_foreground(shell_pgid, 0);
+        else
+            put_shell_in_background(shell_pgid, 0);
+
     }
     /* Т.к. не может выйти из цикла */
     return -1;
@@ -107,6 +101,7 @@ int read_line(char *line, size_t size)
     while (1)
     {
         c = getchar();
+        //хз че тут
         if (c == EOF || c == '\n')
         {
             line[pos] = '\0';
@@ -126,7 +121,7 @@ int read_line(char *line, size_t size)
     return -2;
 }
 
-int parse_line(char* input, char** output, const int n)
+int parse_line(char* input, char** output)
 {
     char* separator = " ";
     char* parsed;
@@ -148,42 +143,106 @@ int parse_line(char* input, char** output, const int n)
         }
         output[index] = parsed;
         index++;
-        if (index > n)
-        {
-            printf("Error: too much args\n");
-            return -1;
-        }
+
         parsed = strtok(NULL, separator);
     }
 
     if (strcmp(output[index - 1], "&") == 0)
     {
-        background_work = 1;
+        foreground = 0;
         output[index - 1] = NULL;
     }
     else
     {
-        background_work = 0;
+        foreground = 1;
         output[index] = NULL;
     }
     return 0;
 }
 
-void termination_handler(int signum)
+int init_shell(void)
 {
-    printf("\n");
+    shell_terminal = STDIN_FILENO;
+    shell_is_interactive = isatty (shell_terminal);
+    if (!shell_is_interactive) return -1; // error
+
+    /* Loop until we are in the foreground.  */
+    while (tcgetpgrp (shell_terminal) != (shell_pgid = getpgrp ()))
+        kill (-shell_pgid, SIGTTIN);
+    
+     /* Ignore interactive and job-control signals.  */
+    signal(SIGINT, SIG_IGN);
+    signal(SIGQUIT, SIG_IGN);
+    signal(SIGTSTP, SIG_IGN);
+    signal(SIGTTIN, SIG_IGN);
+    signal(SIGTTOU, SIG_IGN);
+    signal(SIGCHLD, SIG_IGN);
+
+    /* Put ourselves in our own process group.  */
+    shell_pgid = getpid();
+    if (setpgid (shell_pgid, shell_pgid) < 0)
+      {
+        perror ("Couldn't put the shell in its own process group");
+        exit (1);
+      }
+
+    /* Grab control of the terminal.  */
+    tcsetpgrp (shell_terminal, shell_pgid);
+
+    /* Save default terminal attributes for shell.  */
+    tcgetattr (shell_terminal, &shell_tmodes);
+    return 0;
 }
 
-void termination_handler_child (int signum)
+int launch_process (process *p, pid_t pgid, int foreground)
 {
-    exit(EXIT_SUCCESS);
+    if (!shell_is_interactive) return -1; //error
+
+    pid_t pid = getpid();
+    if (pgid == 0) pgid = pid;
+    setpgid(pid, pgid);
+    if (foreground) tcsetpgrp(shell_terminal, pgid);
+
+    /* Set the handling for job control signals back to the default.  */
+    signal(SIGINT, SIG_DFL);
+    signal(SIGQUIT, SIG_DFL);
+    signal(SIGTSTP, SIG_DFL);
+    signal(SIGTTIN, SIG_DFL);
+    signal(SIGTTOU, SIG_DFL);
+    signal(SIGCHLD, SIG_DFL);
+
+    execvp(p->argv[0], p->argv);
+    perror("execvp");
+    exit(1);
 }
 
-void child_handler(int signum)
+int do_process_notification(int sig)
 {
-    pid_t pid;
+    // тоже хз
+}
+
+void put_shell_in_foreground(pid_t shell, const int cont)
+{
+    tcsetpgrp (shell_terminal, shell);
+
+    wait_for_process(&child_p);
+
+    /* Put the shell back in the foreground.  */
+    tcsetpgrp (shell_terminal, shell_pgid); //stupid shit as we don't use jobs
+
+    /* Restore the shell’s terminal modes.  */
+    tcsetattr (shell_terminal, TCSADRAIN, &shell_tmodes);
+}
+
+void put_shell_in_background(pid_t shell, const int cont)
+{
+    //typically do nothing
+}
+
+void wait_for_process(process* p)
+{
     int status;
+    pid_t pid;
 
-    /* EEEEXTEERMINAAATE! */
-    while((pid = waitpid(-1, &status, WNOHANG)) > 0);
+    pid = wait(p->pid, &status, WUNTRACED); //may be do wait while (!job_is_stopped)
 }
