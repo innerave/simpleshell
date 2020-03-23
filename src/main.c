@@ -34,7 +34,6 @@ int read_line(char*, size_t);
 
 int init_shell(void);
 int launch_process(process*, pid_t, int);
-int do_process_notification(int);
 void put_shell_in_background(pid_t, const int);
 void put_shell_in_foreground(pid_t, const int);
 void wait_for_process(process*);
@@ -93,12 +92,11 @@ int main()
 
 int read_line(char *line, size_t size)
 {
-    char c;
     int pos = 0;
 
     while (1)
     {
-        c = getchar();
+        char c = getchar();
         //хз че тут
         if (c == EOF || c == '\n')
         {
@@ -217,11 +215,6 @@ int launch_process (process *p, pid_t pgid, int foreground)
     exit(1);
 }
 
-int do_process_notification(int sig)
-{
-    // тоже хз
-}
-
 void put_shell_in_foreground(pid_t shell, const int cont)
 {
     tcsetpgrp (shell_terminal, shell);
@@ -243,7 +236,5 @@ void put_shell_in_background(pid_t shell, const int cont)
 void wait_for_process(process* p)
 {
     int status;
-    pid_t pid;
-
-    pid = waitpid(p->pid, &status, WUNTRACED); //may be do wait while (!job_is_stopped)
+    waitpid(p->pid, &status, WUNTRACED); //may be do wait while (!job_is_stopped)
 }
