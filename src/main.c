@@ -10,8 +10,7 @@
 #include <errno.h>
 #include <sys/resource.h>
 
-typedef struct process
-{
+typedef struct process {
   char **argv;                /* for exec */
   pid_t pid;                  /* process ID */
   char completed;             /* true if process has completed */
@@ -22,7 +21,7 @@ typedef struct process
 struct process child_p;
 int stat_loc;
 int foreground;
-int change_directory = 0; //rework!!!
+int change_directory; //rework!!!
 
 pid_t shell_pgid;
 struct termios shell_tmodes;
@@ -36,54 +35,54 @@ int init_shell(void);
 int launch_process(process*, pid_t, int);
 void put_shell_in_background(pid_t, const int);
 void put_shell_in_foreground(pid_t, const int);
-void wait_for_process(process*);
+void wait_for_process(process *);
 
-int main()
+int main(void)
 {
     char to_read[MAX_INPUT];
     char cwd[PATH_MAX];
-    char* parsed[50];
+    char *parsed[50];
 
-    while(1)
+    while (1)
     {
-        init_shell();
-        getcwd(cwd, PATH_MAX);
-        printf("[%s] simpleshell: $ ", cwd);
+	init_shell();
+	getcwd(cwd, PATH_MAX);
+	printf("[%s] simpleshell: $ ", cwd);
 
-        if (read_line(to_read, MAX_INPUT) == -1) return -2;
-        if (parse_line(to_read, parsed, 50) == -1) return -3;
-        if (parsed[0] == NULL)
-        {
-            continue;
-        }
-        if (change_directory == 1) //REWORKKK!!!
-        {
-            if (chdir(parsed[1]) == -1)
-            {
-                perror("Change directory");
-            }
-            continue;
-        }
+	if (read_line(to_read, MAX_INPUT) == -1) return -2;
+	if (parse_line(to_read, parsed, 50) == -1) return -3;
+	if (parsed[0] == NULL)
+	{
+	    continue;
+	}
+	if (change_directory == 1) //REWORKKK!!!
+	{
+	    if (chdir(parsed[1]) == -1)
+	    {
+		perror("Change directory");
+	    }
+	    continue;
+	}
 
-        pid_t pid = fork();
+	pid_t pid = fork();
 
-        if (pid == 0) {
-            child_p.argv = parsed;
-            launch_process(&child_p, shell_pgid, foreground);
-          }
-        else {
-            if (shell_is_interactive) {
-                child_p.pid = pid;
-                setpgid(pid, shell_pgid);
-              }
-          }
+	if (pid == 0) {
+	    child_p.argv = parsed;
+	    launch_process(&child_p, shell_pgid, foreground);
+	  }
+	else {
+	    if (shell_is_interactive) {
+		child_p.pid = pid;
+		setpgid(pid, shell_pgid);
+	      }
+	  }
 
-        if (!shell_is_interactive)
-             wait_for_process(&child_p);  //ПОКА ХЗ
-        else if (foreground)
-            put_shell_in_foreground(shell_pgid, 0);
-        else
-            put_shell_in_background(shell_pgid, 0);
+	if (!shell_is_interactive)
+	     wait_for_process(&child_p);  //ПОКА ХЗ
+	else if (foreground)
+	    put_shell_in_foreground(shell_pgid, 0);
+	else
+	    put_shell_in_background(shell_pgid, 0);
 
     }
     /* Т.к. не может выйти из цикла */
@@ -96,64 +95,63 @@ int read_line(char *line, size_t size)
 
     while (1)
     {
-        char c = getchar();
-        //хз че тут
-        if (c == EOF || c == '\n')
-        {
-            line[pos] = '\0';
-            return 0;
-        }
-        else
-        {
-            line[pos] = c;
-        }
-        pos++;
-        if (pos > (int)size)
-        {
-            printf("Error: exided space\n");
-            return -1;
-        }
+	char c = getchar();
+	//хз че тут
+	if (c == EOF || c == '\n')
+	{
+	    line[pos] = '\0';
+	    return 0;
+        } else
+	{
+	    line[pos] = c;
+	}
+	pos++;
+	if (pos > (int)size)
+	{
+	    printf("Error: exided space\n");
+	    return -1;
+	}
     }
     return -2;
 }
 
-int parse_line(char* input, char** output, const int n)
+int parse_line(char *input, char **output, const int n)
 {
-    char* separator = " ";
-    char* parsed;
+    char *separator = " ";
+    char *parsed;
     int index = 0;
+
     change_directory = 0;
 
     parsed = strtok(input, separator);
 
     if (parsed == NULL)
     {
-        return 0;
+	return 0;
     }
 
     while (parsed != NULL)
     {
-        if (strcmp(parsed, "cd") == 0)
-        {
-            change_directory = 1;
-        }
-        output[index] = parsed;
-        index++;
+	if (strcmp(parsed, "cd") == 0)
+	{
+	    change_directory = 1;
+	}
+	output[index] = parsed;
+	index++;
 
-        parsed = strtok(NULL, separator);
-		
+	parsed = strtok(NULL, separator);
+
 		if (index > n) return -1;
     }
 
     if (strcmp(output[index - 1], "&") == 0)
     {
-        foreground = 0;
-        output[index - 1] = NULL;
-    }
-    else
+	foreground = 0;
+	output[index - 1] = NULL;
+    } else
     {
-        foreground = 1;
-        output[index] = NULL;
+	foreground = 1;
+	output[index] = NULL;
     }
     return 0;
 }
@@ -161,13 +159,13 @@ int parse_line(char* input, char** output, const int n)
 int init_shell(void)
 {
     shell_terminal = STDIN_FILENO;
-    shell_is_interactive = isatty (shell_terminal);
+    shell_is_interactive = isatty(shell_terminal);
     if (!shell_is_interactive) return -1; // error
 
     /* Loop until we are in the foreground.  */
-    while (tcgetpgrp (shell_terminal) != (shell_pgid = getpgrp ()))
-        kill (-shell_pgid, SIGTTIN);
-    
+    while (tcgetpgrp(shell_terminal) != (shell_pgid = getpgrp()))
+	kill(-shell_pgid, SIGTTIN);
+
      /* Ignore interactive and job-control signals.  */
     signal(SIGINT, SIG_IGN);
     signal(SIGQUIT, SIG_IGN);
@@ -178,17 +176,17 @@ int init_shell(void)
 
     /* Put ourselves in our own process group.  */
     shell_pgid = getpid();
-    if (setpgid (shell_pgid, shell_pgid) < 0)
+    if (setpgid(shell_pgid, shell_pgid) < 0)
       {
-        perror ("Couldn't put the shell in its own process group");
-        exit (1);
+	perror("Couldn't put the shell in its own process group");
+	exit(1);
       }
 
     /* Grab control of the terminal.  */
-    tcsetpgrp (shell_terminal, shell_pgid);
+    tcsetpgrp(shell_terminal, shell_pgid);
 
     /* Save default terminal attributes for shell.  */
-    tcgetattr (shell_terminal, &shell_tmodes);
+    tcgetattr(shell_terminal, &shell_tmodes);
     return 0;
 }
 
@@ -197,12 +195,13 @@ int launch_process (process *p, pid_t pgid, int foreground)
     if (!shell_is_interactive) return -1; //error
 
     pid_t pid = getpid();
+
     if (pgid == 0) pgid = pid;
     setpgid(pid, pgid);
     if (foreground) tcsetpgrp(shell_terminal, pgid);
     if (foreground) {
-        signal(SIGINT, SIG_DFL);
-        signal(SIGQUIT, SIG_DFL);
+	signal(SIGINT, SIG_DFL);
+	signal(SIGQUIT, SIG_DFL);
       }
     /* Set the handling for job control signals back to the default.  */
     signal(SIGTSTP, SIG_DFL);
@@ -217,15 +216,15 @@ int launch_process (process *p, pid_t pgid, int foreground)
 
 void put_shell_in_foreground(pid_t shell, const int cont)
 {
-    tcsetpgrp (shell_terminal, shell);
+    tcsetpgrp(shell_terminal, shell);
 
     wait_for_process(&child_p);
 
     /* Put the shell back in the foreground.  */
-    tcsetpgrp (shell_terminal, shell_pgid); //stupid shit as we don't use jobs
+    tcsetpgrp(shell_terminal, shell_pgid); //stupid shit as we don't use jobs
 
     /* Restore the shell’s terminal modes.  */
-    tcsetattr (shell_terminal, TCSADRAIN, &shell_tmodes);
+    tcsetattr(shell_terminal, TCSADRAIN, &shell_tmodes);
 }
 
 void put_shell_in_background(pid_t shell, const int cont)
@@ -233,8 +232,9 @@ void put_shell_in_background(pid_t shell, const int cont)
 //    kill(-shell_pgid, SIGTTIN);
 }
 
-void wait_for_process(process* p)
+void wait_for_process(process *p)
 {
     int status;
+
     waitpid(p->pid, &status, WUNTRACED); //may be do wait while (!job_is_stopped)
 }
