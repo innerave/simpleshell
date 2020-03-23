@@ -45,6 +45,7 @@ int main()
 
     char to_read[MAX_INPUT];
     char cwd[PATH_MAX];
+	char* parsed[50];
 
     while(1)
     {
@@ -52,7 +53,7 @@ int main()
         printf("[%s] simpleshell: $ ", cwd);
 
         if (read_line(to_read, MAX_INPUT) == -1) return -2;
-        if (parse_line(to_read, child_p->argv) == -1) return -3;
+        if (parse_line(to_read, parsed, 50) == -1) return -3;
         if (parsed[0] == NULL)
         {
             continue;
@@ -69,7 +70,8 @@ int main()
         pid_t pid = fork();
 
         if (pid == 0)
-        {
+        
+			child_p->argv = parsed;
             launch_process(&child_p, shell_pgid, foreground);
         }
         else
@@ -121,7 +123,7 @@ int read_line(char *line, size_t size)
     return -2;
 }
 
-int parse_line(char* input, char** output)
+int parse_line(char* input, char** output, const int n)
 {
     char* separator = " ";
     char* parsed;
@@ -145,6 +147,8 @@ int parse_line(char* input, char** output)
         index++;
 
         parsed = strtok(NULL, separator);
+		
+		if (index > n) return -1;
     }
 
     if (strcmp(output[index - 1], "&") == 0)
