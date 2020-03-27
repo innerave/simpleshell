@@ -9,6 +9,7 @@
 #include <linux/limits.h>
 #include <errno.h>
 #include <sys/resource.h>
+#include <setjmp.h>
 
 typedef struct process {
   char **argv;                /* for exec */
@@ -22,6 +23,7 @@ struct process child_p;
 int stat_loc;
 int foreground;
 int change_directory; //rework!!!
+sigjmp_buf return_to_input;
 
 pid_t shell_pgid;
 struct termios shell_tmodes;
@@ -36,6 +38,7 @@ int launch_process(process*, pid_t, int);
 void put_shell_in_background(pid_t, const int);
 void put_shell_in_foreground(pid_t, const int);
 void wait_for_process(process *);
+void sigint_hndl(int );
 
 int main(void)
 {
@@ -44,12 +47,15 @@ int main(void)
     char *parsed[50];
 
     while (1)
-    {
+    {	
+	if (sigsetjmp(return_to_input, 1) == 1) printf("\n");
 	init_shell();
 	getcwd(cwd, PATH_MAX);
 	printf("[%s] simpleshell: $ ", cwd);
 
 	if (read_line(to_read, MAX_INPUT) == -1) return -2;
+        signal(SIGINT, SIG_IGN);
+	
 	if (parse_line(to_read, parsed, 50) == -1) return -3;
 	if (parsed[0] == NULL)
 	{
@@ -81,8 +87,10 @@ int main(void)
 	     wait_for_process(&child_p);  //ПОКА ХЗ
 	else if (foreground)
 	    put_shell_in_foreground(shell_pgid, 0);
-	else
+	else{ 
+	    printf("[CHILD PID]: %d\n", pid);
 	    put_shell_in_background(shell_pgid, 0);
+	}
 
     }
     /* Т.к. не может выйти из цикла */
@@ -167,7 +175,7 @@ int init_shell(void)
 	kill(-shell_pgid, SIGTTIN);
 
      /* Ignore interactive and job-control signals.  */
-    signal(SIGINT, SIG_IGN);
+    signal(SIGINT, sigint_hndl);
     signal(SIGQUIT, SIG_IGN);
     signal(SIGTSTP, SIG_IGN);
     signal(SIGTTIN, SIG_IGN);
@@ -187,6 +195,9 @@ int init_shell(void)
 
     /* Save default terminal attributes for shell.  */
     tcgetattr(shell_terminal, &shell_tmodes);
+
+    foreground = 0;
+    change_directory = 0;
     return 0;
 }
 
@@ -202,6 +213,8 @@ int launch_process (process *p, pid_t pgid, int foreground)
     if (foreground) {
 	signal(SIGINT, SIG_DFL);
 	signal(SIGQUIT, SIG_DFL);
+      } else {
+	signal(SIGINT, SIG_IGN);
       }
     /* Set the handling for job control signals back to the default.  */
     signal(SIGTSTP, SIG_DFL);
@@ -237,4 +250,9 @@ void wait_for_process(process *p)
     int status;
 
     waitpid(p->pid, &status, WUNTRACED); //may be do wait while (!job_is_stopped)
+}
+
+void sigint_hndl(int signum)
+{
+    siglongjmp(return_to_input, 1);
 }
